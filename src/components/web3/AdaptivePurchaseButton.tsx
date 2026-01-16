@@ -1,9 +1,10 @@
 'use client';
 
 import { useState } from 'react';
+import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { useWeb3Comfort } from '@/hooks/useWeb3Comfort';
 import { Button } from '@/components/ui';
-import { Wallet, CreditCard, Sparkles, Brain, ChevronDown } from 'lucide-react';
+import { Wallet, CreditCard, Sparkles, Brain, ChevronDown, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface AdaptivePurchaseButtonProps {
@@ -23,17 +24,72 @@ export function AdaptivePurchaseButton({
     isPending,
     disabled
 }: AdaptivePurchaseButtonProps) {
-    const { result, isAnalyzing, isNovice, shouldHideWallet, resetSignals } = useWeb3Comfort();
+    const { result, isAnalyzing, isNovice, shouldHideWallet, resetSignals, recordWalletConnection } = useWeb3Comfort();
+    const { login, authenticated, ready, user } = usePrivy();
+    const { wallets } = useWallets();
     const [showOptions, setShowOptions] = useState(false);
     const [showAIInsight, setShowAIInsight] = useState(false);
+    const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+    // Get embedded wallet if exists
+    const embeddedWallet = wallets.find(w => w.walletClientType === 'privy');
+
+    // Handle simple checkout (Privy login + embedded wallet)
+    const handleSimpleCheckout = async () => {
+        if (!ready) return;
+
+        if (!authenticated) {
+            setIsLoggingIn(true);
+            try {
+                await login();
+                recordWalletConnection();
+            } catch (e) {
+                console.error('Login failed:', e);
+            } finally {
+                setIsLoggingIn(false);
+            }
+        } else if (embeddedWallet) {
+            // User has embedded wallet, proceed with purchase
+            console.log('🎟️ Purchasing with embedded wallet:', embeddedWallet.address);
+            onEmbeddedPurchase?.() || onWalletPurchase();
+        } else {
+            // Authenticated but no embedded wallet - use external wallet
+            onWalletPurchase();
+        }
+    };
 
     // Loading state
-    if (isAnalyzing) {
+    if (isAnalyzing || !ready) {
         return (
             <Button disabled className="w-full h-16 rounded-full">
                 <Brain className="w-5 h-5 mr-2 animate-pulse" />
                 Analyzing your preferences...
             </Button>
+        );
+    }
+
+    // Show login success message
+    if (authenticated && embeddedWallet && isNovice) {
+        return (
+            <div className="space-y-3">
+                <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-2xl text-green-400 text-sm">
+                    <p className="font-bold">✓ Wallet Ready!</p>
+                    <p className="text-xs text-green-400/60 font-mono mt-1">
+                        {embeddedWallet.address.slice(0, 6)}...{embeddedWallet.address.slice(-4)}
+                    </p>
+                </div>
+                <Button
+                    className="w-full h-16 rounded-full text-lg font-black uppercase italic bg-gradient-to-r from-green-500 to-emerald-600"
+                    onClick={onWalletPurchase}
+                    disabled={disabled || isPending}
+                >
+                    {isPending ? 'Processing...' : `Complete Purchase • ${ticketPrice}`}
+                </Button>
+                <p className="text-center text-xs text-white/40">
+                    <Sparkles className="w-3 h-3 inline mr-1 text-purple-400" />
+                    AI created a wallet for you automatically
+                </p>
+            </div>
         );
     }
 
@@ -43,10 +99,15 @@ export function AdaptivePurchaseButton({
             <div className="space-y-3">
                 <Button
                     className="w-full h-16 rounded-full text-lg font-black uppercase italic bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700"
-                    onClick={onEmbeddedPurchase || onWalletPurchase}
-                    disabled={disabled || isPending}
+                    onClick={handleSimpleCheckout}
+                    disabled={disabled || isPending || isLoggingIn}
                 >
-                    {isPending ? (
+                    {isLoggingIn ? (
+                        <>
+                            <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                            Setting up...
+                        </>
+                    ) : isPending ? (
                         'Processing...'
                     ) : (
                         <>
@@ -114,14 +175,18 @@ export function AdaptivePurchaseButton({
                 )}
             </Button>
 
-            {result?.shouldOfferEmbeddedWallet && onEmbeddedPurchase && (
+            {result?.shouldOfferEmbeddedWallet && (
                 <Button
                     variant="secondary"
                     className="w-full h-12 rounded-full"
-                    onClick={onEmbeddedPurchase}
-                    disabled={disabled || isPending}
+                    onClick={handleSimpleCheckout}
+                    disabled={disabled || isPending || isLoggingIn}
                 >
-                    <CreditCard className="w-4 h-4 mr-2" />
+                    {isLoggingIn ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                        <CreditCard className="w-4 h-4 mr-2" />
+                    )}
                     Use Simple Checkout
                 </Button>
             )}
