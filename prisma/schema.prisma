@@ -296,3 +296,24 @@ model FanIQBadge {
   @@unique([userId, artistId, tier])
   @@index([userId])
 }
+
+// Quiz stats for leaderboard (using visitorId for anonymous users)
+model QuizUserStats {
+  id            String   @id @default(uuid())
+  visitorId     String   // Browser fingerprint or user ID
+  artistName    String
+  attemptCount  Int      @default(0)
+  totalScore    Float    @default(0)
+  averageScore  Float    @default(0)
+  bestScore     Float    @default(0)
+  bestAccuracy  Float    @default(0)
+  bestSpeed     Float    @default(0)
+  lastScore     Float    @default(0)
+  lastPlayedAt  DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([visitorId, artistName])
+  @@index([artistName, bestScore])
+  @@index([visitorId])
+}
