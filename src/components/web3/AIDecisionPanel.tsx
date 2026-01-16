@@ -2,32 +2,64 @@
 
 import { useWeb3Comfort } from '@/hooks/useWeb3Comfort';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Brain, Wifi, Wallet, Clock, CheckCircle, XCircle, Sparkles } from 'lucide-react';
+import { Brain, Clock, CheckCircle, XCircle, Sparkles, Minimize2, Maximize2 } from 'lucide-react';
 import { useState } from 'react';
 
 export function AIDecisionPanel() {
-    const { result, signals, isAnalyzing } = useWeb3Comfort();
+    const { result, signals, isAnalyzing, walletInfo } = useWeb3Comfort();
     const [isExpanded, setIsExpanded] = useState(true);
+    const [isMinimized, setIsMinimized] = useState(false);
 
     if (!result && !isAnalyzing) return null;
 
+    // Minimized view - just a small floating icon
+    if (isMinimized) {
+        return (
+            <motion.button
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                onClick={() => setIsMinimized(false)}
+                className={`fixed bottom-4 left-4 z-50 w-12 h-12 rounded-full flex items-center justify-center shadow-2xl border ${result?.level === 'novice' ? 'bg-green-500/20 border-green-500/50' :
+                    result?.level === 'curious' ? 'bg-yellow-500/20 border-yellow-500/50' :
+                        result?.level === 'native' ? 'bg-purple-500/20 border-purple-500/50' :
+                            'bg-gray-500/20 border-gray-500/50'
+                    } hover:scale-110 transition-transform`}
+                title="Expand AI Panel"
+            >
+                <Brain className="w-6 h-6 text-purple-400" />
+            </motion.button>
+        );
+    }
+
     const steps = [
         {
-            label: 'Scanning browser',
+            label: 'Wallet extension',
             status: 'complete',
-            detail: signals?.hasWalletExtension ? 'Wallet detected' : 'No wallet extension',
-            icon: signals?.hasWalletExtension ? <CheckCircle className="w-3 h-3 text-green-400" /> : <XCircle className="w-3 h-3 text-yellow-400" />
+            detail: walletInfo?.hasWallet ? `✓ ${walletInfo.walletType || 'Detected'}` : '✗ None found',
+            icon: walletInfo?.hasWallet ? <CheckCircle className="w-3 h-3 text-green-400" /> : <XCircle className="w-3 h-3 text-red-400" />
         },
         {
-            label: 'Checking history',
+            label: 'Wallet connected',
             status: 'complete',
-            detail: `${signals?.previousTransactionCount || 0} previous transactions`,
-            icon: signals?.previousTransactionCount ? <CheckCircle className="w-3 h-3 text-green-400" /> : <XCircle className="w-3 h-3 text-yellow-400" />
+            detail: signals?.hasConnectedWalletBefore ? '✓ Previously connected' : '✗ Never connected',
+            icon: signals?.hasConnectedWalletBefore ? <CheckCircle className="w-3 h-3 text-green-400" /> : <XCircle className="w-3 h-3 text-yellow-400" />
         },
         {
-            label: 'Session analysis',
+            label: 'Transaction history',
             status: 'complete',
-            detail: `Session #${signals?.sessionCount || 1}`,
+            detail: `${signals?.previousTransactionCount || 0} on-chain txns`,
+            icon: (signals?.previousTransactionCount || 0) > 0 ? <CheckCircle className="w-3 h-3 text-green-400" /> : <XCircle className="w-3 h-3 text-yellow-400" />
+        },
+        {
+            label: 'Failed attempts',
+            status: 'complete',
+            detail: `${signals?.failedTransactions || 0} failures`,
+            icon: (signals?.failedTransactions || 0) > 2 ? <XCircle className="w-3 h-3 text-red-400" /> : <CheckCircle className="w-3 h-3 text-green-400" />
+        },
+        {
+            label: 'Session behavior',
+            status: 'complete',
+            detail: `Visit #${signals?.sessionCount || 1} • ${signals?.timeOnWeb3UI || 0}s on Web3 UI`,
             icon: <Clock className="w-3 h-3 text-blue-400" />
         },
         {
@@ -58,32 +90,41 @@ export function AIDecisionPanel() {
 
     return (
         <motion.div
-            initial={{ opacity: 0, x: 20 }}
+            initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
-            className="fixed bottom-4 right-4 z-50"
+            className="fixed bottom-4 left-4 z-50"
         >
             <div className={`bg-gradient-to-br ${getDecisionColor()} backdrop-blur-xl border rounded-2xl shadow-2xl overflow-hidden max-w-xs`}>
                 {/* Header */}
-                <button
-                    onClick={() => setIsExpanded(!isExpanded)}
-                    className="w-full p-3 flex items-center justify-between hover:bg-white/5 transition-colors"
-                >
-                    <div className="flex items-center gap-2">
-                        <Brain className="w-4 h-4 text-purple-400" />
-                        <span className="text-sm font-bold text-white">AI Web3 Decision</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        {isAnalyzing ? (
-                            <span className="text-xs text-purple-400 animate-pulse">Analyzing...</span>
-                        ) : (
-                            <span className={`text-xs font-bold uppercase ${result?.level === 'novice' ? 'text-green-400' :
+                <div className="flex items-center">
+                    <button
+                        onClick={() => setIsExpanded(!isExpanded)}
+                        className="flex-1 p-3 flex items-center justify-between hover:bg-white/5 transition-colors"
+                    >
+                        <div className="flex items-center gap-2">
+                            <Brain className="w-4 h-4 text-purple-400" />
+                            <span className="text-sm font-bold text-white">AI Web3 Decision</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            {isAnalyzing ? (
+                                <span className="text-xs text-purple-400 animate-pulse">Analyzing...</span>
+                            ) : (
+                                <span className={`text-xs font-bold uppercase ${result?.level === 'novice' ? 'text-green-400' :
                                     result?.level === 'curious' ? 'text-yellow-400' : 'text-purple-400'
-                                }`}>
-                                {result?.level}
-                            </span>
-                        )}
-                    </div>
-                </button>
+                                    }`}>
+                                    {result?.level}
+                                </span>
+                            )}
+                        </div>
+                    </button>
+                    <button
+                        onClick={() => setIsMinimized(true)}
+                        className="p-3 hover:bg-white/10 transition-colors"
+                        title="Minimize"
+                    >
+                        <Minimize2 className="w-4 h-4 text-white/40 hover:text-white" />
+                    </button>
+                </div>
 
                 <AnimatePresence>
                     {isExpanded && (
@@ -126,7 +167,34 @@ export function AIDecisionPanel() {
                                     <p className="text-xs text-white/40 mt-1 italic">
                                         {result.recommendation}
                                     </p>
+
+                                    {/* Score Display */}
+                                    <div className="mt-3 p-2 bg-white/5 rounded-lg">
+                                        <div className="flex justify-between items-center text-xs">
+                                            <span className="text-white/60">Comfort Score:</span>
+                                            <span className="font-bold text-white">
+                                                {result.scoreBreakdown?.total || 0}/100
+                                            </span>
+                                        </div>
+                                        <div className="h-2 bg-white/10 rounded-full mt-1 overflow-hidden">
+                                            <motion.div
+                                                initial={{ width: 0 }}
+                                                animate={{ width: `${result.scoreBreakdown?.total || 0}%` }}
+                                                className={`h-full rounded-full ${(result.scoreBreakdown?.total || 0) >= 55 ? 'bg-purple-500' :
+                                                    (result.scoreBreakdown?.total || 0) >= 25 ? 'bg-yellow-500' : 'bg-green-500'
+                                                    }`}
+                                            />
+                                        </div>
+                                        <div className="flex justify-between text-[10px] text-white/30 mt-1">
+                                            <span>Novice</span>
+                                            <span>Curious</span>
+                                            <span>Native</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Confidence */}
                                     <div className="flex items-center gap-1 mt-2">
+                                        <span className="text-xs text-white/40">AI Confidence:</span>
                                         <div className="h-1 flex-1 bg-white/10 rounded-full overflow-hidden">
                                             <motion.div
                                                 initial={{ width: 0 }}

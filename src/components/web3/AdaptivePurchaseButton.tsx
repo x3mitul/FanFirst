@@ -24,7 +24,7 @@ export function AdaptivePurchaseButton({
     isPending,
     disabled
 }: AdaptivePurchaseButtonProps) {
-    const { result, isAnalyzing, isNovice, shouldHideWallet, resetSignals, recordWalletConnection } = useWeb3Comfort();
+    const { result, isAnalyzing, isNovice, isCurious, isNative, shouldHideWallet, resetSignals, recordWalletConnection, recordTransaction } = useWeb3Comfort();
     const { login, authenticated, ready, user } = usePrivy();
     const { wallets } = useWallets();
     const [showOptions, setShowOptions] = useState(false);
@@ -43,6 +43,7 @@ export function AdaptivePurchaseButton({
         await new Promise(resolve => setTimeout(resolve, 2000));
         setIsProcessingDemo(false);
         setDemoPurchaseSuccess(true);
+        recordTransaction(); // Update transaction count for AI scoring
         console.log('🎟️ Demo purchase completed with wallet:', embeddedWallet?.address);
     };
 
@@ -142,8 +143,8 @@ export function AdaptivePurchaseButton({
         );
     }
 
-    // Novice user: Simple, non-scary button
-    if (isNovice || shouldHideWallet) {
+    // Novice user: Simple, non-scary button (ONLY if not curious/native)
+    if (isNovice && !isCurious && !isNative) {
         return (
             <div className="space-y-3">
                 <Button
@@ -224,10 +225,10 @@ export function AdaptivePurchaseButton({
                 )}
             </Button>
 
-            {result?.shouldOfferEmbeddedWallet && (
+            {(result?.shouldOfferEmbeddedWallet || isCurious) && (
                 <Button
                     variant="secondary"
-                    className="w-full h-12 rounded-full"
+                    className="w-full h-12 rounded-full border-2 border-white/10 hover:bg-white/10 text-white"
                     onClick={handleSimpleCheckout}
                     disabled={disabled || isPending || isLoggingIn}
                 >
