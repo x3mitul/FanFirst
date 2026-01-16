@@ -1,0 +1,11 @@
+{
+  "network": "polygonAmoy",
+  "chainId": 80002,
+  "contractAddress": "0xD3Cda08481193B7006343f7c87708CE0D7494730",
+  "eventName": "FanFirst Launch Event",
+  "ticketPriceUSD": 0.01,
+  "ticketPriceMATIC": 0.011764705882352941,
+  "maxTickets": 1000,
+  "deployer": "0xE69f89Ac6d04BAcea4f535c0C258a51A638CEA71",
+  "timestamp": "2026-01-14T19:06:29.908Z"
+}
