@@ -21,9 +21,16 @@ import Image from "next/image";
 import { useTicketPurchase } from "@/hooks";
 import { useUser } from "@auth0/nextjs-auth0/client";
 import { useStore } from "@/lib/store";
-import QuizModal from "@/components/quiz/QuizModal";
+import dynamic from "next/dynamic";
 import { AdaptivePurchaseButton } from "@/components/web3/AdaptivePurchaseButton";
-import { AIDecisionPanel } from "@/components/web3/AIDecisionPanel";
+
+const QuizModal = dynamic(() => import("@/components/quiz/QuizModal"), {
+    loading: () => null
+});
+
+const AIDecisionPanel = dynamic(() => import("@/components/web3/AIDecisionPanel").then(mod => mod.AIDecisionPanel), {
+    ssr: false
+});
 
 export default function EventDetailPage() {
     const params = useParams();
@@ -130,6 +137,7 @@ export default function EventDetailPage() {
                     fill
                     className="object-cover"
                     priority
+                    sizes="100vw"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-transparent" />
 
@@ -215,7 +223,13 @@ export default function EventDetailPage() {
                             <h2 className="text-2xl font-bold uppercase italic mb-6">Artist</h2>
                             <div className="flex items-center gap-6 p-6 bg-white/5 border border-white/10 rounded-3xl">
                                 <div className="relative w-24 h-24 rounded-2xl overflow-hidden grayscale hover:grayscale-0 transition-all duration-500">
-                                    <Image src={event.artistImage} alt={event.artist} fill className="object-cover" />
+                                    <Image
+                                        src={event.artistImage}
+                                        alt={event.artist}
+                                        fill
+                                        className="object-cover"
+                                        sizes="(max-width: 768px) 100px, 96px"
+                                    />
                                 </div>
                                 <div>
                                     <h3 className="text-2xl font-black uppercase italic">{event.artist}</h3>
