@@ -20,15 +20,19 @@ import { formatDate, formatPrice } from "@/lib/utils";
 import Image from "next/image";
 import { useTicketPurchase } from "@/hooks";
 import { useStore } from "@/lib/store";
+import QuizModal from "@/components/quiz/QuizModal";
 
 export default function EventDetailPage() {
     const params = useParams();
     const router = useRouter();
     const [selectedTier, setSelectedTier] = useState<string | null>(null);
     const [showQuizPrompt, setShowQuizPrompt] = useState(false);
+    const [showQuizModal, setShowQuizModal] = useState(false);
     const [showWalletPrompt, setShowWalletPrompt] = useState(false);
+    const [quizCompleted, setQuizCompleted] = useState(false);
     const { buyTicket, isPending, isSuccess, error, isConnected } = useTicketPurchase();
     const { isAuthenticated } = useStore();
+    const [hasSeenQuizPrompt, setHasSeenQuizPrompt] = useState(false);
 
     const event = mockEvents.find((e) => e.id === params.id);
 
@@ -41,9 +45,10 @@ export default function EventDetailPage() {
             return;
         }
 
-        // If user is authenticated, show quiz prompt first (only once)
-        if (isAuthenticated && !showQuizPrompt) {
+        // Show quiz prompt first (only once per session)
+        if (!hasSeenQuizPrompt) {
             setShowQuizPrompt(true);
+            setHasSeenQuizPrompt(true);
             return;
         }
 
@@ -57,9 +62,21 @@ export default function EventDetailPage() {
         }
     };
 
-    const goToQuiz = () => {
-        // Redirect to quiz with artist context
-        router.push(`/quiz?artist=${encodeURIComponent(event?.artist || '')}&eventId=${event?.id}`);
+    const startQuiz = () => {
+        setShowQuizPrompt(false);
+        setShowQuizModal(true);
+    };
+
+    const handleQuizComplete = (score: number, correct: number, total: number) => {
+        setShowQuizModal(false);
+        setQuizCompleted(true);
+        // Auto-proceed to purchase after quiz
+        const tier = event?.ticketTiers.find(t => t.id === selectedTier);
+        if (tier) {
+            buyTicket(1, tier.price.toString()).catch(err => {
+                console.error("Purchase error:", err);
+            });
+        }
     };
 
     if (!event) {
@@ -293,7 +310,7 @@ export default function EventDetailPage() {
                         <div className="space-y-3">
                             <Button
                                 className="w-full h-14 rounded-full text-lg font-black uppercase"
-                                onClick={goToQuiz}
+                                onClick={startQuiz}
                             >
                                 <Brain className="w-5 h-5 mr-2" />
                                 Take FanIQ Quiz
@@ -341,6 +358,14 @@ export default function EventDetailPage() {
                     </motion.div>
                 </div>
             )}
+
+            {/* Quiz Modal */}
+            <QuizModal
+                isOpen={showQuizModal}
+                onClose={() => setShowQuizModal(false)}
+                onComplete={handleQuizComplete}
+                artistName={event.artist}
+            />
         </div>
     );
 }
