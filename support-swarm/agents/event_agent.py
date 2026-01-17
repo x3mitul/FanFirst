@@ -1,73 +1,56 @@
-# Event Agent - With robust fallbacks
+# Event Agent - Hybrid: Cache → RAG → LLM
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage
 from typing import List, Dict, AsyncGenerator
 import os
 
-# Sample events
-SAMPLE_EVENTS = """🎫 **Upcoming Events**
+try:
+    from vector_store import get_vector_store
+    RAG_AVAILABLE = True
+except ImportError:
+    RAG_AVAILABLE = False
 
-🏀 **LA Lakers vs Boston Celtics**
-   📅 March 15, 2025 | 📍 Crypto.com Arena | 🎟️ Available
+EVENTS_INFO = """🎫 **Upcoming Events**
 
-🎤 **Taylor Swift - Eras Tour**
-   📅 April 10, 2025 | 📍 SoFi Stadium | 🎟️ Limited
+🏀 LA Lakers vs Boston Celtics
+   March 15, 2025 | Crypto.com Arena
 
-🎵 **Drake Concert**
-   📅 May 5, 2025 | 📍 Staples Center | 🎟️ Available
+🎤 Taylor Swift - Eras Tour
+   April 10, 2025 | SoFi Stadium
 
-🎭 **Hamilton - Broadway Tour**
-   📅 June 20, 2025 | 📍 Dolby Theatre | 🎟️ On Sale Soon
+🎵 Drake Concert
+   May 5, 2025 | Staples Center
 
-Browse all events at **/events**"""
+Browse all: /events"""
 
-EVENT_RESPONSES: Dict[str, str] = {
-    "lakers": """🏀 **LA Lakers Events**
+EVENT_CACHE = {
+    "lakers": """🏀 **LA Lakers**
 
-📅 **Next Game:** LA Lakers vs Boston Celtics
-📍 **Venue:** Crypto.com Arena, Los Angeles
-🗓️ **Date:** March 15, 2025
-🎟️ **Tickets:** Starting at $125
+Next: Lakers vs Celtics
+📅 March 15, 2025
+📍 Crypto.com Arena
+🎟️ Tickets from $125
 
-Browse all Lakers games at /events?search=lakers""",
+Browse at /events?search=lakers""",
 
     "taylor": """🎤 **Taylor Swift - Eras Tour**
 
-📅 **Date:** April 10, 2025
-📍 **Venue:** SoFi Stadium, Los Angeles
-🎟️ **Tickets:** Limited availability!
+📅 April 10, 2025
+📍 SoFi Stadium
+🎟️ Limited availability!
 
-Get tickets at /events before they sell out!""",
-
-    "drake": """🎵 **Drake Concert**
-
-📅 **Date:** May 5, 2025
-📍 **Venue:** Staples Center
-🎟️ **Tickets:** Available
-
-Buy at /events?search=drake""",
-
-    "upcoming": SAMPLE_EVENTS,
-    "events": SAMPLE_EVENTS,
-    "what": SAMPLE_EVENTS,
-    "when": SAMPLE_EVENTS,
-    "show": SAMPLE_EVENTS,
+Get tickets at /events""",
+    
+    "upcoming": EVENTS_INFO,
+    "events": EVENTS_INFO,
+    "when": EVENTS_INFO,
 }
 
 
-def find_event_response(message: str) -> str | None:
-    msg_lower = message.lower()
-    for key, response in EVENT_RESPONSES.items():
-        if key in msg_lower:
-            return response
-    return None
-
-
 class EventAgent:
-    """Event info with fallbacks"""
-    
     def __init__(self):
         self._llm = None
+        self._vector_store = None
     
     @property
     def llm(self):
@@ -81,9 +64,16 @@ class EventAgent:
                         temperature=0.7,
                         streaming=True,
                     )
-                except Exception as e:
-                    print(f"[EventAgent] Failed to init LLM: {e}")
+                except: pass
         return self._llm
+    
+    @property
+    def vector_store(self):
+        if self._vector_store is None and RAG_AVAILABLE:
+            try:
+                self._vector_store = get_vector_store()
+            except: pass
+        return self._vector_store
     
     async def stream_response(
         self, 
@@ -92,28 +82,35 @@ class EventAgent:
         db=None
     ) -> AsyncGenerator[str, None]:
         
-        cached = find_event_response(message)
-        if cached:
-            for i in range(0, len(cached), 15):
-                yield cached[i:i+15]
-            return
+        msg_lower = message.lower()
+        for key in EVENT_CACHE:
+            if key in msg_lower:
+                cached = EVENT_CACHE[key]
+                for i in range(0, len(cached), 20):
+                    yield cached[i:i+20]
+                return
+        
+        context = ""
+        if self.vector_store:
+            try:
+                context = self.vector_store.get_context(message)
+            except: pass
         
         if self.llm:
             try:
                 prompt = f"""You are Event Info for FanFirst.
-Available: Lakers games, Taylor Swift, Drake concert, Hamilton.
-Be brief.
+{f'Context: {context}' if context else ''}
+Events: Lakers games, Taylor Swift, Drake, Hamilton
 
 User: {message}
 
-Reply:"""
+Brief reply:"""
                 
                 async for chunk in self.llm.astream([HumanMessage(content=prompt)]):
                     if chunk.content:
                         yield chunk.content
                 return
-            except Exception as e:
-                print(f"[EventAgent] LLM error: {e}")
+            except: pass
         
-        for i in range(0, len(SAMPLE_EVENTS), 15):
-            yield SAMPLE_EVENTS[i:i+15]
+        for i in range(0, len(EVENTS_INFO), 20):
+            yield EVENTS_INFO[i:i+20]

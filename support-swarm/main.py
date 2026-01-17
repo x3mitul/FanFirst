@@ -1,4 +1,4 @@
-# Customer Support Swarm - FastAPI Main Server
+# Customer Support Swarm - Main Server with RAG
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -8,35 +8,49 @@ import os
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
 
-# Load ALL environment files (order matters - .env.local overrides .env)
+# Load env files
 parent_dir = os.path.dirname(os.path.dirname(__file__))
 load_dotenv(os.path.join(parent_dir, '.env'))
 load_dotenv(os.path.join(parent_dir, '.env.local'), override=True)
-
-# Also try current working directory
 load_dotenv('.env')
 load_dotenv('.env.local', override=True)
 
-# Set for agents to use
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 print(f"[Support Swarm] GEMINI_API_KEY: {'SET ✓' if GEMINI_KEY else 'NOT SET ✗'}")
-if GEMINI_KEY:
-    print(f"[Support Swarm] Key starts with: {GEMINI_KEY[:10]}...")
 
-# Import agents AFTER loading env
+# Import after env is loaded
 from db import init_db
 from agents import RouterAgent, TicketAgent, EventAgent, AccountAgent, FAQAgent
+
+# Try to initialize RAG
+try:
+    from vector_store import get_vector_store
+    RAG_ENABLED = True
+    print("[Support Swarm] RAG: ENABLED ✓")
+except Exception as e:
+    RAG_ENABLED = False
+    print(f"[Support Swarm] RAG: DISABLED - {e}")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    
+    # Pre-load vector store
+    if RAG_ENABLED:
+        try:
+            vs = get_vector_store()
+            print(f"[Support Swarm] Vector store loaded with {vs.collection.count()} docs")
+        except Exception as e:
+            print(f"[Support Swarm] Vector store init error: {e}")
+    
     print("✅ Customer Support Swarm initialized!")
     yield
 
 app = FastAPI(
     title="Customer Support Swarm",
-    description="Multi-agent AI support for FanFirst",
-    version="1.0.0",
+    description="Multi-agent AI support with RAG",
+    version="1.1.0",
     lifespan=lifespan
 )
 
@@ -66,26 +80,19 @@ class ChatMessage(BaseModel):
     visitor_id: Optional[str] = None
 
 
-class ChatResponse(BaseModel):
-    conversation_id: str
-    agent_type: str
-    agent_description: str
-    content: str
-
-
 @app.get("/")
 async def root():
     return {
         "service": "Customer Support Swarm",
         "status": "running",
-        "gemini_key": "set" if os.getenv("GEMINI_API_KEY") else "missing",
-        "agents": ["router", "ticket", "event", "account", "faq"]
+        "rag_enabled": RAG_ENABLED,
+        "gemini": bool(GEMINI_KEY),
     }
 
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy", "gemini": bool(os.getenv("GEMINI_API_KEY"))}
+    return {"status": "healthy", "gemini": bool(GEMINI_KEY), "rag": RAG_ENABLED}
 
 
 def get_or_create_conversation(conversation_id: Optional[str], visitor_id: str) -> str:
@@ -125,6 +132,8 @@ async def websocket_chat(websocket: WebSocket):
             if not message:
                 continue
             
+            print(f"📩 Query: {message[:50]}...")
+            
             conversation_id = get_or_create_conversation(conversation_id, visitor_id)
             save_message(conversation_id, "user", message)
             history = get_history(conversation_id)
@@ -132,6 +141,7 @@ async def websocket_chat(websocket: WebSocket):
             # Route
             agent_type, routing_msg = await router_agent.classify(message)
             agent_desc = router_agent.get_agent_description(agent_type)
+            print(f"🎯 Routed to: {agent_type}")
             
             await websocket.send_json({
                 "type": "routing",
@@ -157,16 +167,18 @@ async def websocket_chat(websocket: WebSocket):
                     async for chunk in account_agent.stream_response(message, history, None, user_id):
                         full_response += chunk
                         await websocket.send_json({"type": "stream", "content": chunk, "agent_type": agent_type})
-                else:
+                else:  # FAQ
                     async for chunk in faq_agent.stream_response(message, history):
                         full_response += chunk
                         await websocket.send_json({"type": "stream", "content": chunk, "agent_type": agent_type})
+                
+                print(f"✅ Response generated ({len(full_response)} chars)")
                         
             except Exception as e:
                 print(f"❌ Agent error: {e}")
                 import traceback
                 traceback.print_exc()
-                full_response = f"Sorry, I encountered an issue. Please try rephrasing your question."
+                full_response = f"Sorry, I encountered an issue. Please try again."
                 await websocket.send_json({"type": "stream", "content": full_response, "agent_type": agent_type})
             
             save_message(conversation_id, "assistant", full_response, agent_type)

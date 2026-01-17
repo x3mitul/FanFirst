@@ -1,114 +1,58 @@
-# Account Agent - With robust fallbacks
+# Account Agent - Hybrid: Cache → RAG → LLM
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage
 from typing import List, Dict, AsyncGenerator
 import os
 
-ACCOUNT_RESPONSES: Dict[str, str] = {
-    "wallet": """🔗 **Connect Your Wallet**
+try:
+    from vector_store import get_vector_store
+    RAG_AVAILABLE = True
+except ImportError:
+    RAG_AVAILABLE = False
 
-To connect:
-1. Click **"Connect Wallet"** in the header
-2. Choose your wallet:
-   - MetaMask (EVM)
-   - Phantom (Solana)
-3. Approve the connection
+ACCOUNT_CACHE = {
+    "wallet": """🔗 **Connect Wallet**
 
-**Supported:** Polygon, Ethereum, Solana
+1. Click "Connect Wallet" in header
+2. Choose: MetaMask (EVM) or Phantom (Solana)
+3. Approve connection
 
-Once connected, you can buy NFT tickets!""",
+Your wallet is needed to buy NFT tickets!""",
 
-    "fandom": """📊 **Your Fandom Score**
+    "fandom": """📊 **Fandom Score**
 
-Fandom Score shows your fan engagement level.
-
-**Earn points by:**
-- 🎫 Attending events: +50
-- 💬 Community posts: +10
-- ✅ FanIQ Quiz: +5-25
-- 🤝 Getting vouched: +15
-
-**Higher score = earlier ticket access!**
-
-View your score: Dashboard → Profile""",
-
-    "score": """📊 **Fandom Score**
-
-Your engagement level that unlocks benefits!
-
-**Earn points:**
+Earn points:
 - Attend events: +50
 - Community posts: +10
 - FanIQ Quiz: +5-25
+- Get vouched: +15
 
-Check yours at Dashboard → Profile""",
+Higher score = earlier ticket access!""",
 
-    "spotify": """🎵 **Spotify Integration**
+    "spotify": """🎵 **Spotify**
 
-Connect Spotify to verify your fan status:
-1. Go to Dashboard → Settings
-2. Click "Connect Spotify"
-3. Authorize FanFirst
+Dashboard → Settings → Connect Spotify
 
-**Benefits:**
-- Boost Fandom Score for following artists
-- Personalized event recommendations
+Benefits:
+- Boost Fandom Score
+- Personalized recommendations
 
 Your data stays private!""",
-
-    "login": """🔐 **Login Help**
-
-To sign in:
-1. Click "Sign In" in header
-2. Use Google, Email, or Wallet
-3. Complete verification
-
-**Issues?**
-- Clear browser cookies
-- Try incognito mode
-- Email: support@fanfirst.com""",
-
-    "profile": """👤 **Your Profile**
-
-Manage your profile at Dashboard → Profile:
-- Update name and avatar
-- View Fandom Score
-- See attendance history
-- Manage connected accounts
-
-**Connected accounts:**
-- Wallet (required for purchases)
-- Spotify (optional, boosts score)""",
 }
 
-DEFAULT_ACCOUNT = """👤 **Account Support**
 
-I can help with:
-- 🔗 **Wallet** - Connect MetaMask or Phantom
-- 📊 **Fandom Score** - Check and improve it
-- 🎵 **Spotify** - Link for fan verification
-- 🔐 **Login** - Sign in issues
-
-**Quick links:**
-- Your profile: /dashboard
-- Settings: /settings
-
-What do you need help with?"""
-
-
-def find_account_response(message: str) -> str | None:
+def find_account_cache(message: str) -> str | None:
     msg_lower = message.lower()
-    for key, response in ACCOUNT_RESPONSES.items():
+    for key in ACCOUNT_CACHE:
         if key in msg_lower:
-            return response
+            return ACCOUNT_CACHE[key]
     return None
 
 
 class AccountAgent:
-    """Account support with fallbacks"""
-    
     def __init__(self):
         self._llm = None
+        self._vector_store = None
     
     @property
     def llm(self):
@@ -122,9 +66,16 @@ class AccountAgent:
                         temperature=0.7,
                         streaming=True,
                     )
-                except Exception as e:
-                    print(f"[AccountAgent] Failed to init LLM: {e}")
+                except: pass
         return self._llm
+    
+    @property
+    def vector_store(self):
+        if self._vector_store is None and RAG_AVAILABLE:
+            try:
+                self._vector_store = get_vector_store()
+            except: pass
+        return self._vector_store
     
     async def stream_response(
         self, 
@@ -134,28 +85,32 @@ class AccountAgent:
         user_id: str = None
     ) -> AsyncGenerator[str, None]:
         
-        cached = find_account_response(message)
+        cached = find_account_cache(message)
         if cached:
-            for i in range(0, len(cached), 15):
-                yield cached[i:i+15]
+            for i in range(0, len(cached), 20):
+                yield cached[i:i+20]
             return
+        
+        context = ""
+        if self.vector_store:
+            try:
+                context = self.vector_store.get_context(message)
+            except: pass
         
         if self.llm:
             try:
                 prompt = f"""You are Account Support for FanFirst.
-Help with: profile, wallet, fandom score, spotify.
-Be brief.
+{f'Context: {context}' if context else ''}
 
 User: {message}
 
-Reply:"""
+Brief reply:"""
                 
                 async for chunk in self.llm.astream([HumanMessage(content=prompt)]):
                     if chunk.content:
                         yield chunk.content
                 return
-            except Exception as e:
-                print(f"[AccountAgent] LLM error: {e}")
+            except: pass
         
-        for i in range(0, len(DEFAULT_ACCOUNT), 15):
-            yield DEFAULT_ACCOUNT[i:i+15]
+        fallback = "Check Dashboard → Settings or email support@fanfirst.com"
+        yield fallback
