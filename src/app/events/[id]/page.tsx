@@ -49,6 +49,9 @@ export default function EventDetailPage() {
     const [quizCompleted, setQuizCompleted] = useState(false);
     const [hasSeenQuizPrompt, setHasSeenQuizPrompt] = useState(false);
 
+    // Find event from mock data based on URL param
+    const event = mockEvents.find(e => e.id === params.id) || null;
+
     useEffect(() => {
         if (user && event) {
             // Initial check can still use fetch or be preloaded server-side

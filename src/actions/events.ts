@@ -8,6 +8,12 @@ import { formatDate } from "@/lib/utils";
 
 export async function toggleReminder(eventId: string) {
     try {
+        // Validate eventId early
+        if (!eventId || typeof eventId !== 'string') {
+            console.error("[Reminder] Invalid eventId:", eventId);
+            return { success: false, error: "Invalid event ID" };
+        }
+
         const session = await auth0.getSession();
         if (!session?.user?.sub) {
             return { success: false, error: "Unauthorized: Invalid Session" };
