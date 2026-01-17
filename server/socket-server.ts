@@ -15,7 +15,7 @@ import { createServer } from 'http';
 import { Server, Socket } from 'socket.io';
 import { Pool } from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "../prisma/generated/client";
 
 const PORT = process.env.SOCKET_PORT || 3001;
 
@@ -31,9 +31,15 @@ const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
 const httpServer = createServer();
+
+// CORS origins from environment variable or default to localhost
+const corsOrigins = process.env.CORS_ORIGINS
+    ? process.env.CORS_ORIGINS.split(',')
+    : ['http://localhost:3000', 'http://127.0.0.1:3000'];
+
 const io = new Server(httpServer, {
     cors: {
-        origin: ['http://localhost:3000', 'http://127.0.0.1:3000'],
+        origin: corsOrigins,
         methods: ['GET', 'POST'],
         credentials: true,
     },
